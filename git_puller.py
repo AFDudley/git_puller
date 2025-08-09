@@ -4,6 +4,10 @@ Git Repository Puller
 
 This script takes a GitHub or Gitea organization URL as input and clones all repositories
 from that organization into a local directory named after the organization.
+
+Note: For GitHub organizations with private repositories, you must provide a personal access
+token using the -t/--token option. Without a token, only public repositories will be discovered
+and cloned, even if you have SSH access to private repositories.
 """
 
 import os
@@ -184,7 +188,7 @@ def main():
     )
     parser.add_argument(
         "-t", "--token", 
-        help="Personal access token for authentication (required for Gitea)"
+        help="Personal access token for authentication (required for Gitea, required for GitHub private repos)"
     )
     parser.add_argument(
         "-o", "--output-dir", 

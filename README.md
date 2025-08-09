@@ -48,6 +48,8 @@ By default, Git Puller uses SSH for cloning. Make sure your SSH key is:
 ### Options
 
 - `-t, --token`: Personal access token for authentication (optional for GitHub, **required for Gitea**)
+  - **GitHub tokens**: Must have `repo` scope to access private repositories
+  - **Security recommendation**: Delete the token immediately after use to minimize exposure
 - `-o, --output-dir`: Base directory to store the cloned repositories
 - `-s, --skip-existing`: Skip repositories that already exist locally
 - `--https`: Use HTTPS instead of SSH for cloning repositories
