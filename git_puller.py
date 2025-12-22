@@ -52,8 +52,46 @@ def parse_git_url(url):
     return hostname, org_name, platform
 
 
-def clone_github_repos(org_name, token=None, output_dir=None, skip_existing=False, use_https=False):
-    """Clone all repositories from the specified GitHub organization."""
+def build_clone_url(hostname, org_name, repo_name, token=None, use_https=False):
+    """Build clone URL for any platform."""
+    if use_https:
+        if token:
+            return f"https://{token}@{hostname}/{org_name}/{repo_name}.git"
+        return f"https://{hostname}/{org_name}/{repo_name}.git"
+    return f"git@{hostname}:{org_name}/{repo_name}.git"
+
+
+def clone_or_update_mirror(repo_path, clone_url, repo_name, update=True):
+    """Clone a new mirror or update an existing one. Returns True if cloned."""
+    if repo_path.exists():
+        if update:
+            print(f"Updating existing mirror: {repo_name}")
+            try:
+                existing_repo = git.Repo(repo_path)
+                existing_repo.git.remote('update')
+                print(f"Successfully updated {repo_name}")
+            except Exception as e:
+                print(f"Error updating {repo_name}: {e}")
+        return False
+
+    print(f"Cloning mirror of {repo_name}...")
+    try:
+        cloned_repo = git.Repo.clone_from(clone_url, repo_path, multi_options=['--mirror'])
+        branches = [ref.name for ref in cloned_repo.refs if not ref.name.startswith('refs/')]
+        print(f"Successfully cloned mirror of {repo_name} ({len(branches)} branches):")
+        for branch in branches:
+            print(f"  {branch}")
+        return True
+    except Exception as e:
+        print(f"Error cloning {repo_name}: {e}")
+        return False
+
+
+def clone_github_repos(org_name, token=None, output_dir=None, update=True, use_https=False):
+    """Clone all repositories from the specified GitHub organization.
+
+    TODO: Consider adding a --skip-existing flag in the future to skip repos entirely.
+    """
     # Initialize GitHub API client
     g = Github(token) if token else Github()
     
@@ -71,37 +109,18 @@ def clone_github_repos(org_name, token=None, output_dir=None, skip_existing=Fals
         output_path.mkdir(exist_ok=True, parents=True)
         print(f"Repositories will be cloned to: {output_path.absolute()}")
         
-        # Get all repositories for the organization
+        # Get all repositories for the organization (PyGithub handles pagination)
+        if not token:
+            print("Note: No token provided, only public repos will be pulled")
         repos = list(org.get_repos())
         print(f"Found {len(repos)} repositories")
         
-        # Clone each repository
+        # Clone each repository as a mirror
         for repo in repos:
-            repo_path = output_path / repo.name
-            
-            if repo_path.exists() and skip_existing:
-                print(f"Skipping existing repository: {repo.name}")
-                continue
-            
-            print(f"Cloning {repo.name}...")
-            
-            if use_https:
-                if token:
-                    # Use token for authentication in HTTPS URL
-                    clone_url = repo.clone_url.replace('https://', f'https://{token}@')
-                else:
-                    clone_url = repo.clone_url
-            else:
-                # Use SSH URL for cloning (default)
-                clone_url = f"git@github.com:{org_name}/{repo.name}.git"
-                print(f"Using SSH URL: {clone_url}")
-            
-            try:
-                git.Repo.clone_from(clone_url, repo_path)
-                print(f"Successfully cloned {repo.name}")
-            except Exception as e:
-                print(f"Error cloning {repo.name}: {e}")
-        
+            repo_path = output_path / f"{repo.name}.git"
+            clone_url = build_clone_url("github.com", org_name, repo.name, token, use_https)
+            clone_or_update_mirror(repo_path, clone_url, repo.name, update)
+
         print(f"Finished cloning repositories from {org_name}")
     
     except Exception as e:
@@ -112,8 +131,11 @@ def clone_github_repos(org_name, token=None, output_dir=None, skip_existing=Fals
         g.close()
 
 
-def clone_gitea_repos(hostname, org_name, token=None, output_dir=None, skip_existing=False, use_https=False):
-    """Clone all repositories from the specified Gitea organization."""
+def clone_gitea_repos(hostname, org_name, token=None, output_dir=None, update=True, use_https=False):
+    """Clone all repositories from the specified Gitea organization.
+
+    TODO: Consider adding a --skip-existing flag in the future to skip repos entirely.
+    """
     if not token:
         print("Error: Gitea API requires a token for authentication")
         print("Please provide a token with the -t or --token option")
@@ -123,12 +145,19 @@ def clone_gitea_repos(hostname, org_name, token=None, output_dir=None, skip_exis
         # Create API URL for the Gitea organization's repositories
         api_url = f"https://{hostname}/api/v1/orgs/{org_name}/repos"
         headers = {"Authorization": f"token {token}"}
-        
-        # Get the organization's repositories
-        response = requests.get(api_url, headers=headers)
-        response.raise_for_status()
-        repos = response.json()
-        
+
+        # Fetch all repositories with pagination
+        repos = []
+        page = 1
+        while True:
+            response = requests.get(api_url, headers=headers, params={"page": page, "limit": 50})
+            response.raise_for_status()
+            page_repos = response.json()
+            if not page_repos:
+                break
+            repos.extend(page_repos)
+            page += 1
+
         print(f"Found Gitea organization: {org_name}")
         
         # Create output directory named after the organization
@@ -142,31 +171,13 @@ def clone_gitea_repos(hostname, org_name, token=None, output_dir=None, skip_exis
         
         print(f"Found {len(repos)} repositories")
         
-        # Clone each repository
+        # Clone each repository as a mirror
         for repo in repos:
             repo_name = repo['name']
-            repo_path = output_path / repo_name
-            
-            if repo_path.exists() and skip_existing:
-                print(f"Skipping existing repository: {repo_name}")
-                continue
-            
-            print(f"Cloning {repo_name}...")
-            
-            if use_https:
-                # Use HTTPS URL with token
-                clone_url = f"https://{token}@{hostname}/{org_name}/{repo_name}.git"
-            else:
-                # Use SSH URL for cloning (default)
-                clone_url = f"git@{hostname}:{org_name}/{repo_name}.git"
-                print(f"Using SSH URL: {clone_url}")
-            
-            try:
-                git.Repo.clone_from(clone_url, repo_path)
-                print(f"Successfully cloned {repo_name}")
-            except Exception as e:
-                print(f"Error cloning {repo_name}: {e}")
-        
+            repo_path = output_path / f"{repo_name}.git"
+            clone_url = build_clone_url(hostname, org_name, repo_name, token, use_https)
+            clone_or_update_mirror(repo_path, clone_url, repo_name, update)
+
         print(f"Finished cloning repositories from {org_name}")
     
     except requests.exceptions.RequestException as e:
@@ -195,9 +206,9 @@ def main():
         help="Base directory to store the cloned repositories"
     )
     parser.add_argument(
-        "-s", "--skip-existing",
+        "-u", "--no-update",
         action="store_true",
-        help="Skip repositories that already exist locally"
+        help="Don't fetch updates for repositories that already exist locally"
     )
     parser.add_argument(
         "--https",
@@ -216,19 +227,19 @@ def main():
         # Clone repositories based on the platform
         if platform == 'github':
             clone_github_repos(
-                org_name, 
-                token=args.token, 
+                org_name,
+                token=args.token,
                 output_dir=args.output_dir,
-                skip_existing=args.skip_existing,
+                update=not args.no_update,
                 use_https=args.https
             )
         else:  # Gitea
             clone_gitea_repos(
                 hostname,
-                org_name, 
+                org_name,
                 token=args.token,
                 output_dir=args.output_dir,
-                skip_existing=args.skip_existing,
+                update=not args.no_update,
                 use_https=args.https
             )
     
