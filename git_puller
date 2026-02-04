@@ -15,11 +15,11 @@ This script takes a GitHub or Gitea URL as input and clones repositories.
 - Organization URL (e.g., https://github.com/organization): Clones all repositories
 - Repository URL (e.g., https://github.com/org/repo): Clones a single repository
 
-Note: For GitHub organizations with private repositories, you must provide a personal access
-token using the -t/--token option. Without a token, only public repositories will be discovered
-and cloned, even if you have SSH access to private repositories.
+Uses token from gh CLI config (~/.config/gh/hosts.yml) by default.
+Run 'gh auth login' to set up authentication.
 """
 
+import re
 import shutil
 import argparse
 import requests
@@ -27,6 +27,23 @@ from pathlib import Path
 from github import Github, Auth
 import git
 from urllib.parse import urlparse
+
+
+def get_gh_token(hostname='github.com'):
+    """Get OAuth token from gh CLI config for the specified hostname."""
+    gh_hosts_path = Path.home() / '.config' / 'gh' / 'hosts.yml'
+    if not gh_hosts_path.exists():
+        return None
+    content = gh_hosts_path.read_text()
+    # Find the section for this hostname and extract oauth_token
+    pattern = rf'^{re.escape(hostname)}:\s*\n((?:[ \t]+.*\n)*)'
+    match = re.search(pattern, content, re.MULTILINE)
+    if match:
+        section = match.group(1)
+        token_match = re.search(r'oauth_token:\s*(\S+)', section)
+        if token_match:
+            return token_match.group(1)
+    return None
 
 
 def parse_git_url(url):
@@ -100,6 +117,8 @@ def clone_or_update_mirror(repo_path, clone_url, repo_name, org_name, hostname, 
 
         if remote_name in remote_names:
             if update:
+                # Update remote URL to match current clone_url (respects --https flag)
+                existing_repo.git.remote('set-url', remote_name, clone_url)
                 print(f"Fetching {remote_name} for {repo_name}")
                 existing_repo.git.fetch(remote_name)
                 print(f"Successfully fetched {remote_name}")
@@ -206,7 +225,7 @@ def clone_github_repos(hostname, org_name, token=None, output_dir=None, update=T
         print(f"Repositories will be cloned to: {output_path.absolute()}")
 
         if not token:
-            print("Note: No token provided, only public repos will be pulled")
+            print("Note: No token found, only public repos will be listed")
         repos = list(org.get_repos())
         print(f"Found {len(repos)} repositories")
 
@@ -257,8 +276,8 @@ def main():
         help="Organization or repository URL (e.g., https://github.com/org or https://github.com/org/repo)"
     )
     parser.add_argument(
-        "-t", "--token", 
-        help="Personal access token for authentication (required for Gitea, required for GitHub private repos)"
+        "-t", "--token",
+        help="Personal access token (default: from gh CLI config ~/.config/gh/hosts.yml)"
     )
     parser.add_argument(
         "-o", "--output-dir", 
@@ -281,6 +300,9 @@ def main():
     hostname, org_name, repo_name, platform = parse_git_url(args.url)
     print(f"Detected platform: {platform.capitalize()}")
 
+    # Token defaults to gh CLI config (~/.config/gh/hosts.yml)
+    token = args.token or get_gh_token(hostname)
+
     if repo_name:
         # Single repo mode
         print(f"Repository: {org_name}/{repo_name}")
@@ -288,7 +310,7 @@ def main():
             hostname,
             org_name,
             repo_name,
-            token=args.token,
+            token=token,
             output_dir=args.output_dir,
             update=not args.no_update,
             use_https=args.https
@@ -300,7 +322,7 @@ def main():
             clone_github_repos(
                 hostname,
                 org_name,
-                token=args.token,
+                token=token,
                 output_dir=args.output_dir,
                 update=not args.no_update,
                 use_https=args.https
@@ -309,7 +331,7 @@ def main():
             clone_gitea_repos(
                 hostname,
                 org_name,
-                token=args.token,
+                token=token,
                 output_dir=args.output_dir,
                 update=not args.no_update,
                 use_https=args.https
