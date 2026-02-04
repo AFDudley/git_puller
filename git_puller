@@ -76,12 +76,14 @@ def build_clone_url(hostname, org_name, repo_name, token=None, use_https=False):
     return f"git@{hostname}:{org_name}/{repo_name}.git"
 
 
-def clone_or_update_mirror(repo_path, clone_url, repo_name, update=True, working_path=None):
+def clone_or_update_mirror(repo_path, clone_url, repo_name, org_name, hostname, update=True, working_path=None):
     """Clone a new mirror or update an existing one. Returns True if cloned.
 
     If working_path is provided and the mirror doesn't exist but the working
-    directory does, updates the working directory instead of re-cloning.
+    directory does, adds/updates the remote for this org.hostname.
     """
+    remote_name = f"{org_name}.{hostname}"
+
     # Check if mirror exists
     if repo_path.exists():
         if update:
@@ -93,11 +95,19 @@ def clone_or_update_mirror(repo_path, clone_url, repo_name, update=True, working
 
     # Check if working directory exists (mirror was converted)
     if working_path and working_path.exists():
-        if update:
-            print(f"Updating existing repository: {repo_name}")
-            existing_repo = git.Repo(working_path)
-            existing_repo.git.fetch('--all')
-            print(f"Successfully updated {repo_name}")
+        existing_repo = git.Repo(working_path)
+        remote_names = [r.name for r in existing_repo.remotes]
+
+        if remote_name in remote_names:
+            if update:
+                print(f"Fetching {remote_name} for {repo_name}")
+                existing_repo.git.fetch(remote_name)
+                print(f"Successfully fetched {remote_name}")
+        else:
+            print(f"Adding remote {remote_name} to {repo_name}")
+            existing_repo.create_remote(remote_name, clone_url)
+            existing_repo.git.fetch(remote_name)
+            print(f"Successfully added remote {remote_name}")
         return False
 
     print(f"Cloning mirror of {repo_name}...")
@@ -111,12 +121,13 @@ def clone_or_update_mirror(repo_path, clone_url, repo_name, update=True, working
     return True
 
 
-def convert_mirror_to_working(mirror_path, working_path, repo_name):
+def convert_mirror_to_working(mirror_path, working_path, repo_name, org_name, hostname):
     """Convert a mirror clone to a working directory.
 
     Uses a temporary directory for atomicity - if any step fails,
-    the mirror remains intact.
+    the mirror remains intact. Names the remote as org.hostname.
     """
+    remote_name = f"{org_name}.{hostname}"
     print(f"Converting {repo_name} to working directory...")
 
     temp_working = working_path.parent / f".{repo_name}.tmp"
@@ -141,6 +152,9 @@ def convert_mirror_to_working(mirror_path, working_path, repo_name):
         config.remove_option('remote "origin"', 'mirror')
         config.remove_option('remote "origin"', 'tagopt')
 
+    # Rename origin to org.hostname (also updates fetch refspec)
+    working_repo.git.remote('rename', 'origin', remote_name)
+
     # Reset the index to match the working tree
     working_repo.git.reset()
 
@@ -150,12 +164,9 @@ def convert_mirror_to_working(mirror_path, working_path, repo_name):
     print(f"Converted {repo_name}")
 
 
-def get_output_path(org_name, output_dir=None):
+def get_output_path(output_dir=None):
     """Build and create output directory for cloned repos."""
-    if output_dir:
-        output_path = Path(output_dir) / org_name
-    else:
-        output_path = Path(org_name)
+    output_path = Path(output_dir) if output_dir else Path("repos")
     output_path.mkdir(exist_ok=True, parents=True)
     return output_path
 
@@ -167,15 +178,15 @@ def clone_repos(repo_names, hostname, org_name, output_path, token=None, update=
         working_path = output_path / repo_name
         clone_url = build_clone_url(hostname, org_name, repo_name, token, use_https)
 
-        clone_or_update_mirror(mirror_path, clone_url, repo_name, update, working_path)
+        clone_or_update_mirror(mirror_path, clone_url, repo_name, org_name, hostname, update, working_path)
 
         if mirror_path.exists() and not working_path.exists():
-            convert_mirror_to_working(mirror_path, working_path, repo_name)
+            convert_mirror_to_working(mirror_path, working_path, repo_name, org_name, hostname)
 
 
 def clone_single_repo(hostname, org_name, repo_name, token=None, output_dir=None, update=True, use_https=False):
     """Clone a single repository."""
-    output_path = get_output_path(org_name, output_dir)
+    output_path = get_output_path(output_dir)
     print(f"Repository will be cloned to: {output_path.absolute()}")
 
     clone_repos([repo_name], hostname, org_name, output_path, token, update, use_https)
@@ -191,7 +202,7 @@ def clone_github_repos(hostname, org_name, token=None, output_dir=None, update=T
         org = g.get_organization(org_name)
         print(f"Found GitHub organization: {org.name or org_name}")
 
-        output_path = get_output_path(org_name, output_dir)
+        output_path = get_output_path(output_dir)
         print(f"Repositories will be cloned to: {output_path.absolute()}")
 
         if not token:
@@ -227,7 +238,7 @@ def clone_gitea_repos(hostname, org_name, token=None, output_dir=None, update=Tr
 
     print(f"Found Gitea organization: {org_name}")
 
-    output_path = get_output_path(org_name, output_dir)
+    output_path = get_output_path(output_dir)
     print(f"Repositories will be cloned to: {output_path.absolute()}")
     print(f"Found {len(repos)} repositories")
 
