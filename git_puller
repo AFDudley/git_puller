@@ -102,14 +102,12 @@ def clone_or_update_mirror(repo_path, clone_url, repo_name, update=True, working
 
     print(f"Cloning mirror of {repo_name}...")
     cloned_repo = git.Repo.clone_from(clone_url, repo_path, multi_options=['--mirror'])
-    branches = [
-        ref.name.replace('refs/heads/', '')
-        for ref in cloned_repo.refs
-        if ref.name.startswith('refs/heads/')
-    ]
+    branches = [ref.name for ref in cloned_repo.refs if not ref.name.startswith('refs/')]
     print(f"Successfully cloned mirror of {repo_name} ({len(branches)} branches):")
-    for branch in branches:
+    for branch in branches[:5]:
         print(f"  {branch}")
+    if len(branches) > 5:
+        print(f"  ... and {len(branches) - 5} more")
     return True
 
 
