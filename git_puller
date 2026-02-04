@@ -24,7 +24,7 @@ import shutil
 import argparse
 import requests
 from pathlib import Path
-from github import Github
+from github import Github, Auth
 import git
 from urllib.parse import urlparse
 
@@ -185,7 +185,7 @@ def clone_single_repo(hostname, org_name, repo_name, token=None, output_dir=None
 
 def clone_github_repos(hostname, org_name, token=None, output_dir=None, update=True, use_https=False):
     """Clone all repositories from the specified GitHub organization."""
-    g = Github(token) if token else Github()
+    g = Github(auth=Auth.Token(token)) if token else Github()
 
     try:
         org = g.get_organization(org_name)
