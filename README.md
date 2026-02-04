@@ -4,23 +4,18 @@ A Python utility to clone all repositories from GitHub or Gitea organizations us
 
 ## Installation
 
-1. Clone this repository:
-   ```
-   git clone https://github.com/yourusername/git_puller.git
-   cd git_puller
-   ```
+Requires [uv](https://docs.astral.sh/uv/). The script is self-contained and manages its own dependencies.
 
-2. Create a virtual environment and install dependencies using uv:
-   ```
-   uv venv
-   uv pip install -r requirements.txt
-   ```
+```
+git clone https://github.com/yourusername/git_puller.git
+cd git_puller
+```
 
 ## Usage
 
 Basic usage:
 ```
-python git_puller.py https://github.com/organization-name
+./git_puller https://github.com/organization-name
 ```
 
 This will create a directory named after the organization and clone all repositories into it using SSH.
@@ -51,34 +46,34 @@ By default, Git Puller uses SSH for cloning. Make sure your SSH key is:
   - **GitHub tokens**: Must have `repo` scope to access private repositories
   - **Security recommendation**: Delete the token immediately after use to minimize exposure
 - `-o, --output-dir`: Base directory to store the cloned repositories
-- `-s, --skip-existing`: Skip repositories that already exist locally
+- `-u, --no-update`: Don't fetch updates for repositories that already exist locally
 - `--https`: Use HTTPS instead of SSH for cloning repositories
 
 ### Examples
 
 Clone GitHub repositories using the default SSH method:
 ```
-python git_puller.py https://github.com/organization-name
+./git_puller https://github.com/organization-name
 ```
 
 Clone Gitea repositories (token is required):
 ```
-python git_puller.py https://gitea.example.com/organization-name -t your_gitea_token
+./git_puller https://gitea.example.com/organization-name -t your_gitea_token
 ```
 
 Clone repositories using HTTPS with a token:
 ```
-python git_puller.py https://github.com/organization-name --https -t your_github_token
+./git_puller https://github.com/organization-name --https -t your_github_token
 ```
 
 Specify output directory:
 ```
-python git_puller.py https://github.com/organization-name -o ~/projects
+./git_puller https://github.com/organization-name -o ~/projects
 ```
 
-Skip existing repositories:
+Skip updating existing repositories:
 ```
-python git_puller.py https://github.com/organization-name -s
+./git_puller https://github.com/organization-name -u
 ```
 
 ## License
