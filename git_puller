@@ -214,19 +214,26 @@ def clone_single_repo(hostname, org_name, repo_name, token=None, output_dir=None
 
 
 def clone_github_repos(hostname, org_name, token=None, output_dir=None, update=True, use_https=False):
-    """Clone all repositories from the specified GitHub organization."""
+    """Clone all repositories from the specified GitHub organization or user."""
     g = Github(auth=Auth.Token(token)) if token else Github()
 
     try:
-        org = g.get_organization(org_name)
-        print(f"Found GitHub organization: {org.name or org_name}")
+        # Try organization first, fall back to user if not found
+        try:
+            org = g.get_organization(org_name)
+            print(f"Found GitHub organization: {org.name or org_name}")
+            entity = org
+        except Exception:
+            user = g.get_user(org_name)
+            print(f"Found GitHub user: {user.name or org_name}")
+            entity = user
 
         output_path = get_output_path(output_dir)
         print(f"Repositories will be cloned to: {output_path.absolute()}")
 
         if not token:
             print("Note: No token found, only public repos will be listed")
-        repos = list(org.get_repos())
+        repos = list(entity.get_repos())
         print(f"Found {len(repos)} repositories")
 
         clone_repos([r.name for r in repos], hostname, org_name, output_path, token, update, use_https)
